@@ -1,0 +1,10 @@
+# separate React project (its own repo)
+woodhatch/
+# raw Instagram downloads, not used by the site
+ig-raw/
+img/ig/
+# local tooling
+.claude/
+node_modules/
+instagram-feed/.wrangler/
+.dev.vars
