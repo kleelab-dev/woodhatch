@@ -385,6 +385,8 @@ footer{padding:var(--s900) 0 var(--s400);overflow:hidden}
   .wordmark{gap:var(--s200)}.wordmark span{font-size:48px;line-height:48px}.wordmark svg{width:56px;height:56px}
   .gallery-head .arrows{display:none}
 }
+@media (max-width:600px) and (orientation:portrait){.hero-chap .heading-1{font-size:36px;line-height:40px}}
+@media (max-width:860px) and (max-height:700px) and (orientation:portrait){.hero-chap .lede{display:none}}
 @media (max-width:420px){.heading-1{font-size:36px;line-height:40px}.hero-meta div:last-child{display:none}}
 /* phones held sideways: text in a left column, model on the right */
 @media (max-width:860px) and (orientation:landscape) and (max-height:560px){
@@ -943,11 +945,35 @@ if (!location.hash) scrollTo(0, 0);
       camera.aspect = w / h;
       // push the model right on desktop (text sits left), up on mobile (text sits low)
       if (sideways()) camera.setViewOffset(w, h, -w * 0.22, h * 0.06, w, h);
-      else if (mobile()) camera.setViewOffset(w, h, 0, h * 0.2, w, h);
+      else if (mobile()) camera.setViewOffset(w, h, 0, h * 0.2, w, h); // refined every frame by frameMobile()
       else camera.setViewOffset(w, h, -w * 0.12, h * 0.04, w, h);
       camera.updateProjectionMatrix();
     };
     addEventListener('resize', resize); resize();
+
+    // Upright phones: keep the model inside the free space between the nav and the
+    // chapter text. Project a box around the furniture, then zoom out and shift the
+    // view until it fits that gap.
+    const navEl = document.querySelector('nav');
+    const box = [];
+    for (const x of [-2.6, 2.6]) for (const y of [0, 2.8]) for (const z of [-0.5, 1.2]) box.push(new T.Vector3(x, y, z));
+    const v = new T.Vector3();
+    let fitS = 1, fitDy = 0;
+    const frameMobile = () => {
+      const w = canvas.clientWidth, h = canvas.clientHeight, c = canvas.getBoundingClientRect();
+      const chap = document.querySelector('.chap.on');
+      const top = Math.max(0, (navEl ? navEl.getBoundingClientRect().bottom : 0) - c.top) + 12;
+      const bottom = Math.min(h, (chap ? chap.getBoundingClientRect().top : h) - c.top) - 12;
+      const zoneH = Math.max(80, bottom - top), zoneC = top + zoneH / 2;
+      camera.clearViewOffset(); camera.updateMatrixWorld(); camera.updateProjectionMatrix();
+      let y0 = Infinity, y1 = -Infinity, x0 = Infinity, x1 = -Infinity;
+      for (const b of box) { v.copy(b).project(camera); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); }
+      const pxH = (y1 - y0) / 2 * h, pxW = (x1 - x0) / 2 * w;
+      const cy = (1 - (y0 + y1) / 2) / 2 * h;
+      const s = clamp(Math.max(pxH / (zoneH * 0.92), pxW / (w * 0.94)), 0.7, 3.2);
+      const dy = cy - zoneC;
+      return { s, dy };
+    };
 
     draw = (p, time) => {
       // camera: sweeping three quarter view to a front view
@@ -960,6 +986,16 @@ if (!location.hash) scrollTo(0, 0);
       sx += (mx - sx) * 0.05; sy += (my - sy) * 0.05;
       camera.position.set(Math.sin(ang) * rad + sx * 0.8, hgt - sy * 0.5, Math.cos(ang) * rad);
       camera.lookAt(0, lerp(0.6, 1.2, k), 0);
+      if (mobile() && !sideways()) {
+        const m = frameMobile();
+        fitS += (m.s - fitS) * 0.12; fitDy += (m.dy - fitDy) * 0.12;
+        // zoom out along the view direction, then shift the image so the model sits in the gap
+        const look = new T.Vector3(0, lerp(0.6, 1.2, k), 0);
+        camera.position.sub(look).multiplyScalar(fitS).add(look);
+        scene.fog.near = rad * fitS + 2; scene.fog.far = rad * fitS + 16;
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        camera.setViewOffset(w, h, 0, fitDy, w, h); camera.updateProjectionMatrix();
+      }
 
       // blueprint ghost appears during Design, fades as wood fills it
       lineMat.opacity = smooth(0.3, 0.42, p) * (1 - smooth(0.6, 0.72, p)) * 0.85;
